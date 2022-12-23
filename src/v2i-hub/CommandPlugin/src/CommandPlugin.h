@@ -10,6 +10,8 @@
 #ifndef TMX_PLUGINS_COMMANDPLUGIN_H_
 #define TMX_PLUGINS_COMMANDPLUGIN_H_
 
+#define ATTRIBUTE_PATH_CHARACTER '|'
+
 #include <atomic>
 #include <thread>
 #include <queue>
@@ -21,6 +23,7 @@
 #include "PluginClient.h"
 #include <EventLogMessage.h>
 #include <tmx/messages/message_document.hpp>
+#include <tmx/messages/auto_message.hpp>
 
 #include <Base64.h>
 
@@ -63,6 +66,7 @@ public:
 	int Main();
 protected:
 	// Virtual method overrides.
+	void OnMessageReceived(IvpMessage *msg);
 	void OnConfigChanged(const char *key, const char *value);
 	void OnStateChange(IvpPluginState state);
 	void HandleEventLogMessage(EventLogMessage &msg, routeable_message &routeableMsg);
@@ -78,6 +82,8 @@ protected:
 	static void BuildRemoveTelemetry(string *outputBuffer, string dataType);
 	static void BuildCommandResponse(string *outputBuffer, string id, string command, string status, string reason, std::map<string, string> &data, std::map<string, string> &arrayData);
 	static void SendData(string *outputBuffer, struct lws *wsi);
+	void SendDataOverTMXMessaging(string outputBuffer);
+	void SendUpdatesOverTMXMessaging();
 
 	static int WSCallbackHTTP(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len);
 	static int WSCallbackBASE64(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len);

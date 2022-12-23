@@ -89,14 +89,388 @@ CommandPlugin::CommandPlugin(string name) : PluginClient(name)
 	_tmxControl.SetConnectionUrl(string("tcp://" + _databaseAddress + ":" + _databasePort));
 	_tmxControl.DisablePermissionCheck();
 
-	// Add a message filter and handler for each message this plugin wants to receive.
-
-	// Subscribe to all messages specified by the filters above.
-
+	// Subscribe to incoming TMX messages
+	AddMessageFilter("TMXAPIMessage", "Req");
+	SubscribeToMessages();
 }
 
 CommandPlugin::~CommandPlugin()
 {
+}
+
+void CommandPlugin::OnMessageReceived(IvpMessage *msg)
+{
+	string outputBuffer;
+
+	routeable_message rMsg(msg);
+	string msgPayload = rMsg.get_payload_str();
+	msgPayload.erase(std::remove(msgPayload.begin(), msgPayload.end(), '\\'), msgPayload.end());
+	PLOG(logDEBUG1) << "ReceivedTMXmsg Received message: " << rMsg;
+	PLOG(logDEBUG1) << "ReceivedTMXmsg Received payload: " << msgPayload;
+
+	if ((strcmp(msg->type, "TMXAPIMessage") == 0) && (strcmp(msg->subtype, "Req") == 0)) {
+		try {
+			// Read the JSON into a boost property tree.
+			ptree pt;
+			ptree header;
+			ptree payload;
+			istringstream is(msgPayload.c_str());
+			read_json(is, pt);
+			//get header info
+			header = pt.get_child("header");
+			string msgType = header.get<string>("type");
+			string msgSubtype = header.get<string>("subtype");
+
+			if (msgType == "Command" && msgSubtype == "Execute") {
+				//process command
+				payload = pt.get_child("payload");
+				string command = payload.get<string>("command");
+				FILE_LOG(logDEBUG) << "ReceivedTMXmsg processing Execute command " << command;
+				string id = payload.get<string>("id");
+				map<string, string> argsList;
+				try {
+					//get arg list
+					ptree args = payload.get_child("args");
+					BOOST_FOREACH(ptree::value_type &arg, args) {
+						argsList[arg.first] = arg.second.data();
+					}
+				} catch (exception argsEx) {
+					//no args
+					FILE_LOG(logDEBUG) << "ReceivedTMXmsg process command error: no arguments";
+				}
+
+				//process command
+				if (command == "enable")	{
+					if (argsList.find("plugin") != argsList.end()) {
+						TmxControl::pluginlist plugins;
+						plugins.push_back(argsList["plugin"]);
+						bool rc = _tmxControl.enable(plugins);
+						if (rc) {
+							FILE_LOG(logDEBUG) << "ReceivedTMXmsg enable " << argsList["plugin"] << " success";
+						} else {
+							FILE_LOG(logDEBUG) << "ReceivedTMXmsg enable " << argsList["plugin"] << " failed";
+						}
+					}
+				} else if (command == "disable")	{
+					if (argsList.find("plugin") != argsList.end()) {
+						TmxControl::pluginlist plugins;
+						plugins.push_back(argsList["plugin"]);
+						bool rc = _tmxControl.disable(plugins);
+						if (rc) {
+							FILE_LOG(logDEBUG) << "ReceivedTMXmsg disable " << argsList["plugin"] << " success";
+						} else {
+							FILE_LOG(logDEBUG) << "ReceivedTMXmsg disable " << argsList["plugin"] << " failed";
+						}
+					}
+				} else if (command == "set")	{
+					if (argsList.find("plugin") != argsList.end()) {
+						if (argsList.find("key") != argsList.end() && argsList.find("value") != argsList.end()) {
+							TmxControl::pluginlist plugins;
+							bool rc;
+							plugins.push_back(argsList["plugin"]);
+							_tmxControl.ClearOptions();
+
+							if (argsList["key"] == "maxMessageInterval") {
+								//set max message interval
+								_tmxControl.SetOption("max-message-interval", argsList["value"]);
+								rc = _tmxControl.max_message_interval(plugins);
+							} else {
+								//set plugin or system config parameter
+								_tmxControl.SetOption("key", argsList["key"]);
+								_tmxControl.SetOption("value", argsList["value"]);
+
+								if (argsList.find("defaultValue") != argsList.end()) {
+									_tmxControl.SetOption("defaultValue", argsList["defaultValue"]);
+								} else {
+									_tmxControl.SetOption("defaultValue", argsList[""]);
+								}
+
+								if (argsList.find("description") != argsList.end()) {
+									_tmxControl.SetOption("description", argsList["description"]);
+								} else {
+									_tmxControl.SetOption("description", argsList["Added by CommandPlugin"]);
+								}
+
+								if (argsList["plugin"] == "SYSTEMCONFIG") {
+									rc = _tmxControl.set_system(plugins);
+								} else {
+									rc = _tmxControl.set(plugins);
+								}
+							}
+
+							//check if we are setting a system config parameter
+							if (rc) {
+								FILE_LOG(logDEBUG) << "ReceivedTMXmsg set " << argsList["plugin"] << ": " << argsList["key"] << "=" << argsList["value"] << " success";
+							} else {
+								FILE_LOG(logDEBUG) << "ReceivedTMXmsg set " << argsList["plugin"] << ": " << argsList["key"] << "=" << argsList["value"] << " failed";
+							}
+						}
+					}
+				} else if (command == "clearlog") {
+					TmxControl::pluginlist plugins;
+					plugins.push_back("%");
+					bool rc = _tmxControl.clear_event_log(plugins);
+					std::map<string, string> data;
+
+					if (rc) {
+						FILE_LOG(logDEBUG) << "ReceivedTMXmsg clear_event_log success";
+						//clear events data
+						_eventsJSON = "";
+						_eventsUpdatesJSON = "";
+						//send response
+						BuildCommandResponse(&outputBuffer, id, command, "success", "", data, data);
+
+					} else {
+						FILE_LOG(logDEBUG) << "ReceivedTMXmsg clear_event_log failed";
+						BuildCommandResponse(&outputBuffer, id, command, "failed", "Clear event log failed", data, data);
+					}
+				} else if (command == "userlist") {
+					std::map<string, string> data;
+					std::map<string, string> arrayData;
+					bool rc = _tmxControl.all_users_info();
+					if (rc) {
+						//get json output
+						string uJSON = _tmxControl.GetOutput(TmxControlOutputFormat_JSON, false);
+						string outputArray = "";
+						string username;
+						string accesslevel;
+						bool firstUser = true;
+						if (uJSON != "") {
+							outputArray.append("[");
+							tmx::message_container_type *output = _tmxControl.GetOutput();
+							BOOST_FOREACH(ptree::value_type &userInfo, output->get_storage().get_tree()) {
+								BOOST_FOREACH(ptree::value_type &userData, userInfo.second) {
+									if (firstUser) {
+										outputArray.append("{\"username\":\"");
+										firstUser = false;
+									} else {
+										outputArray.append(",{\"username\":\"");
+									}
+									username = userData.second.get<string>("username");
+									accesslevel = userData.second.get<string>("accessLevel");
+									outputArray.append(username);
+									outputArray.append("\",\"accesslevel\":\"");
+									outputArray.append(accesslevel);
+									outputArray.append("\"}");
+								}
+							}
+							outputArray.append("]");
+						}
+
+						if (outputArray != "" && outputArray != "[]") {
+							arrayData["users"] = outputArray;
+						}
+
+						FILE_LOG(logDEBUG) << "ReceivedTMXmsg all_users_info success";
+						//send response
+						BuildCommandResponse(&outputBuffer, id, command, "success", "", data, arrayData);
+					} else {
+						FILE_LOG(logDEBUG) << "ReceivedTMXmsg all_users_info failed";
+						BuildCommandResponse(&outputBuffer, id, command, "failed", "List users failed", data, data);
+					}
+				} else if (command == "useradd") {
+					std::map<string, string> data;
+					if (argsList.find("username") != argsList.end() && argsList.find("password") != argsList.end() && argsList.find("accesslevel") != argsList.end()) {
+						bool validPassword = true;
+						string passwordError = "User add failed:";
+						_tmxControl.ClearOptions();
+						_tmxControl.SetOption("username", argsList["username"]);
+						_tmxControl.SetOption("password", argsList["password"]);
+						_tmxControl.SetOption("access-level", argsList["accesslevel"]);
+						//check for 8 or more valid characters in sequence
+						if (!boost::regex_match(argsList["password"], boost::regex("[-!@#$%^&*+=<>?0-9a-zA-Z]{8,}"))) {
+							if (argsList["password"].length() < 8) {
+								passwordError.append(" (Invalid Length)");
+							}
+
+							if (argsList["password"].length() < 8) {
+								passwordError.append(" (Invalid Character)");
+							}
+							validPassword = false;
+						}
+
+						//check that we have at least one character of each type
+						if (!boost::regex_search(argsList["password"], boost::regex("[-!@#$%^&*+=<>?]"))) {
+							passwordError.append(" (No Symbol)");
+							validPassword = false;
+						}
+
+						if (!boost::regex_search(argsList["password"], boost::regex("[0-9]"))) {
+							passwordError.append(" (No Number)");
+							validPassword = false;
+						}
+
+						if (!boost::regex_search(argsList["password"], boost::regex("[a-z]"))) {
+							passwordError.append(" (No Lower Case Letter)");
+							validPassword = false;
+						}
+
+						if (!boost::regex_search(argsList["password"], boost::regex("[A-Z]"))) {
+							passwordError.append(" (No Upper Case Letter)");
+							validPassword = false;
+						}
+
+						if (validPassword) {
+							bool rc = _tmxControl.user_add();
+							
+							if (rc) {
+								FILE_LOG(logDEBUG) << "ReceivedTMXmsg useradd success";
+								BuildCommandResponse(&outputBuffer, id, command, "success", "", data, data);
+
+							} else {
+								FILE_LOG(logDEBUG) << "ReceivedTMXmsg useradd failed";
+								BuildCommandResponse(&outputBuffer, id, command, "failed", "User add failed", data, data);
+							}
+						} else {
+							FILE_LOG(logDEBUG) << "ReceivedTMXmsg useradd failed:" << passwordError;
+							BuildCommandResponse(&outputBuffer, id, command, "failed", passwordError, data, data);
+						}
+					} else {
+						FILE_LOG(logDEBUG) << "ReceivedTMXmsg useradd failed";
+						BuildCommandResponse(&outputBuffer, id, command, "failed", "User add failed, missing command arguments", data, data);
+					}
+				} else if (command == "userupdate") {
+					std::map<string, string> data;
+					if (argsList.find("username") != argsList.end() && (argsList.find("password") != argsList.end() || argsList.find("accesslevel") != argsList.end())) {
+						bool validPassword = true;
+						string passwordError = "User update failed:";
+						_tmxControl.ClearOptions();
+						_tmxControl.SetOption("username", argsList["username"]);
+						if (argsList.find("password") != argsList.end()) {
+							//FILE_LOG(logDEBUG) << "WSCallbackBASE64 new password = " << argsList["password"];
+							_tmxControl.SetOption("password", argsList["password"]);
+							//check for 8 or more valid characters in sequence
+							if (!boost::regex_match(argsList["password"], boost::regex("[-!@#$%^&*+=<>?0-9a-zA-Z]{8,}"))) {
+								if (argsList["password"].length() < 8)
+									passwordError.append(" (Invalid Length)");
+								if (argsList["password"].length() < 8)
+									passwordError.append(" (Invalid Character)");
+								validPassword = false;
+							}
+
+							//check that we have at least one character of each type
+							if (!boost::regex_search(argsList["password"], boost::regex("[-!@#$%^&*+=<>?]"))) {
+								passwordError.append(" (No Symbol)");
+								validPassword = false;
+							}
+
+							if (!boost::regex_search(argsList["password"], boost::regex("[0-9]"))) {
+								passwordError.append(" (No Number)");
+								validPassword = false;
+							}
+
+							if (!boost::regex_search(argsList["password"], boost::regex("[a-z]"))) {
+								passwordError.append(" (No Lower Case Letter)");
+								validPassword = false;
+							}
+
+							if (!boost::regex_search(argsList["password"], boost::regex("[A-Z]"))) {
+								passwordError.append(" (No Upper Case Letter)");
+								validPassword = false;
+							}
+						}
+
+						if (validPassword) {
+							if (argsList.find("accesslevel") != argsList.end()) {
+								_tmxControl.SetOption("access-level", argsList["accesslevel"]);
+							}
+
+							bool rc = _tmxControl.user_update();
+							if (rc) {
+								FILE_LOG(logDEBUG) << "ReceivedTMXmsg userupdate success";
+								BuildCommandResponse(&outputBuffer, id, command, "success", "", data, data);
+							} else {
+								FILE_LOG(logDEBUG) << "ReceivedTMXmsg userupdate failed";
+								BuildCommandResponse(&outputBuffer, id, command, "failed", "User update failed", data, data);
+							}
+						} else {
+							FILE_LOG(logDEBUG) << "ReceivedTMXmsg userupdate failed:" << passwordError;
+							BuildCommandResponse(&outputBuffer, id, command, "failed", passwordError, data, data);
+						}
+
+					} else {
+						FILE_LOG(logDEBUG) << "ReceivedTMXmsg userupdate failed";
+						BuildCommandResponse(&outputBuffer, id, command, "failed", "User update failed, missing command arguments", data, data);
+					}
+				} else if (command == "userdelete") {
+					std::map<string, string> data;
+					if (argsList.find("username") != argsList.end()) {
+						_tmxControl.ClearOptions();
+						_tmxControl.SetOption("username", argsList["username"]);
+						bool rc = _tmxControl.user_delete();
+						if (rc) {
+							FILE_LOG(logDEBUG) << "ReceivedTMXmsg userdelete success";
+							BuildCommandResponse(&outputBuffer, id, command, "success", "", data, data);
+						} else {
+							FILE_LOG(logDEBUG) << "ReceivedTMXmsg userdelete failed";
+							BuildCommandResponse(&outputBuffer, id, command, "failed", "User delete failed", data, data);
+						}
+					} else {
+						FILE_LOG(logDEBUG) << "ReceivedTMXmsg userdelete failed";
+						BuildCommandResponse(&outputBuffer, id, command, "failed", "User delete failed, missing command arguments", data, data);
+					}
+				} else if (command == "plugininstall") {
+					std::map<string, string> data;
+					if (argsList.find("pluginfile") != argsList.end()) {
+						_tmxControl.ClearOptions();
+						string installFile;
+						{
+							lock_guard<mutex> lock(_configLock);
+							installFile = _downloadPath;
+						}
+						installFile.append("/");
+						installFile.append(argsList["pluginfile"]);
+						_tmxControl.SetOption("plugin-install", installFile);
+						_tmxControl.SetOption("plugin-directory", DEFAULT_PLUGINDIRECTORY);
+						bool rc = _tmxControl.plugin_install();
+						if (rc) {
+							FILE_LOG(logDEBUG) << "ReceivedTMXmsg plugininstall success";
+							BuildCommandResponse(&outputBuffer, id, command, "success", "", data, data);
+
+						} else {
+							FILE_LOG(logDEBUG) << "ReceivedTMXmsg plugininstall failed";
+							BuildCommandResponse(&outputBuffer, id, command, "failed", "Plugin install failed", data, data);
+						}
+					}
+				} else if (command == "pluginuninstall") {
+					std::map<string, string> data;
+					if (argsList.find("plugin") != argsList.end()) {
+						_tmxControl.ClearOptions();
+						_tmxControl.SetOption("plugin-remove", argsList["plugin"]);
+						bool rc = _tmxControl.plugin_remove();
+						if (rc) {
+							FILE_LOG(logDEBUG) << "ReceivedTMXmsg pluginuninstall success";
+							BuildCommandResponse(&outputBuffer, id, command, "success", "", data, data);
+
+						} else {
+							FILE_LOG(logDEBUG) << "ReceivedTMXmsg pluginuninstall failed";
+							BuildCommandResponse(&outputBuffer, id, command, "failed", "Plugin uninstall failed", data, data);
+						}
+					}
+				}
+
+				SendDataOverTMXMessaging(outputBuffer);
+			}
+		} catch (exception ex) {
+			//parse error
+			FILE_LOG(logDEBUG) << "ReceivedTMXmsg process message exception: " << ex.what();
+		}
+	}
+}
+
+void CommandPlugin::SendDataOverTMXMessaging(string outputBuffer)
+{
+	//check for empty buffer
+	if (outputBuffer.length() == 0)
+		return;
+
+	// Actual send
+	tmx::routeable_message v2iMsg;
+	v2iMsg.set_type("TMXAPIMessage");
+	v2iMsg.set_payload(outputBuffer);
+	v2iMsg.set_subtype("Resp");
+
+	BroadcastMessage(v2iMsg);
 }
 
 void CommandPlugin::OnConfigChanged(const char *key, const char *value)
@@ -514,45 +888,7 @@ int CommandPlugin::WSCallbackBASE64(
 	case LWS_CALLBACK_CLOSED:
 		{
 			_connectionCount--;
-			//clear all data if connection count goes to 0
-			if (_connectionCount == 0)
-			{
-				_lastPluginsUpdateTimeMS = 0;
-				_haveList = false;
-				_haveConfig = false;
-				_haveStatus = false;
-				_haveState = false;
-				_haveMessages = false;
-				_haveSystemConfig = false;
-				_haveEvents = false;
-				_listJSON = "";
-				_configJSON = "";
-				_statusJSON = "";
-				_stateJSON = "";
-				_messagesJSON = "";
-				_systemConfigJSON = "";
-				_eventsJSON = "";
-				_lastEventTime = "";
-				_listPluginsJSON.clear();
-				_configPluginsJSON.clear();
-				_statusPluginsJSON.clear();
-				_statePluginsJSON.clear();
-				_messagesPluginsJSON.clear();
-				_systemConfigPluginsJSON.clear();
-				_listPluginsUpdatesJSON.clear();
-				_configPluginsUpdatesJSON.clear();
-				_statusPluginsUpdatesJSON.clear();
-				_statePluginsUpdatesJSON.clear();
-				_messagesPluginsUpdatesJSON.clear();
-				_systemConfigPluginsUpdatesJSON.clear();
-				_listPluginsRemoveJSON.clear();
-				_configPluginsRemoveJSON.clear();
-				_statusPluginsRemoveJSON.clear();
-				_statePluginsRemoveJSON.clear();
-				_messagesPluginsRemoveJSON.clear();
-				_systemConfigPluginsRemoveJSON.clear();
-				_eventsUpdatesJSON = "";
-			}
+
 			//delete allocated buffer and set buffer to NULL for uploading requests with this buffer, otherwise delete request
 			for (auto it = _uploadRequests.begin();it != _uploadRequests.end();)
 			{
@@ -1129,7 +1465,7 @@ int CommandPlugin::WSCallbackBASE64(
 							catch (exception ex)
 							{
 								//parse error
-								FILE_LOG(logDEBUG) << "WSCallbackBASE64 process message exception: ";
+								FILE_LOG(logDEBUG) << "WSCallbackBASE64 process message exception: " << ex.what();
 							}
 
 						}
@@ -1221,6 +1557,24 @@ int CommandPlugin::WSCallbackBASE64(
 	}
 
 	return 0;
+}
+
+void CommandPlugin::SendUpdatesOverTMXMessaging()
+{
+	string outputBuffer;
+
+	PLOG(logDEBUG) << "TMXMessaging send updates";
+	BuildUpdateTelemetry(&outputBuffer, "List");
+	BuildUpdateTelemetry(&outputBuffer, "Config");
+	BuildUpdateTelemetry(&outputBuffer, "Status");
+	BuildUpdateTelemetry(&outputBuffer, "State");
+	BuildUpdateTelemetry(&outputBuffer, "Messages");
+	BuildUpdateTelemetry(&outputBuffer, "SystemConfig");
+	BuildUpdateTelemetry(&outputBuffer, "Events");
+	//build removes, only thing we can remove currently is the plugin itself
+	BuildRemoveTelemetry(&outputBuffer, "List");
+
+	SendDataOverTMXMessaging(outputBuffer);
 }
 
 int CommandPlugin::Main()
@@ -1317,7 +1671,7 @@ int CommandPlugin::Main()
 			EventLogMessage msg;
 			uint64_t currentTime = GetMsTimeSinceEpoch();
 			//check if plugins data needs updated only if we have connections
-			if (_connectionCount > 0 && currentTime >= _lastPluginsUpdateTimeMS + _updateIntervalMS)
+			if (currentTime >= _lastPluginsUpdateTimeMS + _updateIntervalMS)
 			{
 				//set update time
 				_lastPluginsUpdateTimeMS = currentTime;
@@ -1329,6 +1683,9 @@ int CommandPlugin::Main()
 				GetTelemetry("Messages");
 				GetTelemetry("SystemConfig");
 				GetEventTelemetry();
+
+				// Send updated data over TMX messaging
+				SendUpdatesOverTMXMessaging();
 			}
 
 			//schedule writable callback for all base64 protocol connections
