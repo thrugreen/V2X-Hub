@@ -447,8 +447,38 @@ void CommandPlugin::OnMessageReceived(IvpMessage *msg)
 							BuildCommandResponse(&outputBuffer, id, command, "failed", "Plugin uninstall failed", data, data);
 						}
 					}
+				} else if (command == "listplugins") {
+					FILE_LOG(logDEBUG) << "ReceivedTMXmsg Received list plugins";
+					BuildFullTelemetry(&outputBuffer, "List");
+				} else if (command == "getconfig") {
+					FILE_LOG(logDEBUG) << "ReceivedTMXmsg Received get config";
+					BuildFullTelemetry(&outputBuffer, "Config");
+				} else if (command == "getstatus") {
+					FILE_LOG(logDEBUG) << "ReceivedTMXmsg Received get status";
+					BuildFullTelemetry(&outputBuffer, "Status");
+				} else if (command == "getstate") {
+					FILE_LOG(logDEBUG) << "ReceivedTMXmsg Received get state";
+					BuildFullTelemetry(&outputBuffer, "State");
+				} else if (command == "getmessages") {
+					FILE_LOG(logDEBUG) << "ReceivedTMXmsg Received get messages";
+					BuildFullTelemetry(&outputBuffer, "Messages");
+				} else if (command == "getsystemconfig") {
+					FILE_LOG(logDEBUG) << "ReceivedTMXmsg Received get system config";
+					BuildFullTelemetry(&outputBuffer, "SystemConfig");
+				} else if (command == "getevents") {
+					FILE_LOG(logDEBUG) << "ReceivedTMXmsg Received get events";
+					BuildFullTelemetry(&outputBuffer, "Events");
+				} else if (command == "getfulltelemetry") {
+					FILE_LOG(logDEBUG) << "ReceivedTMXmsg Received get full telemetry";
+					BuildFullTelemetry(&outputBuffer, "List");
+					BuildFullTelemetry(&outputBuffer, "Config");
+					BuildFullTelemetry(&outputBuffer, "Status");
+					BuildFullTelemetry(&outputBuffer, "State");
+					BuildFullTelemetry(&outputBuffer, "Messages");
+					BuildFullTelemetry(&outputBuffer, "SystemConfig");
+					BuildFullTelemetry(&outputBuffer, "Events");
 				}
-
+															
 				SendDataOverTMXMessaging(outputBuffer);
 			}
 		} catch (exception ex) {
@@ -1400,6 +1430,52 @@ int CommandPlugin::WSCallbackBASE64(
 												}
 											}
 										}
+										else if (command == "listplugins" && psdata->authorizationLevel >= AuthorizationLevels::ApplicationAdministrator) 
+										{
+											FILE_LOG(logDEBUG) << "WSCallbackBASE64 Received list plugins";
+											BuildFullTelemetry(psdata->outputbuffer, "List");
+										}
+										else if (command == "getconfig" && psdata->authorizationLevel >= AuthorizationLevels::ApplicationAdministrator)
+										{
+											FILE_LOG(logDEBUG) << "WSCallbackBASE64 Received get config";
+											BuildFullTelemetry(psdata->outputbuffer, "Config");
+										} 
+										else if (command == "getstatus" && psdata->authorizationLevel >= AuthorizationLevels::ApplicationAdministrator) 
+										{
+											FILE_LOG(logDEBUG) << "WSCallbackBASE64 Received get status";
+											BuildFullTelemetry(psdata->outputbuffer, "Status");
+										} 
+										else if (command == "getstate" && psdata->authorizationLevel >= AuthorizationLevels::ApplicationAdministrator) 
+										{
+											FILE_LOG(logDEBUG) << "WSCallbackBASE64 Received get state";
+											BuildFullTelemetry(psdata->outputbuffer, "State");
+										} 
+										else if (command == "getmessages" && psdata->authorizationLevel >= AuthorizationLevels::ApplicationAdministrator) 
+										{
+											FILE_LOG(logDEBUG) << "WSCallbackBASE64 Received get messages";
+											BuildFullTelemetry(psdata->outputbuffer, "Messages");
+										} 
+										else if (command == "getsystemconfig" && psdata->authorizationLevel >= AuthorizationLevels::ApplicationAdministrator) 
+										{
+											FILE_LOG(logDEBUG) << "WSCallbackBASE64 Received get system config";
+											BuildFullTelemetry(psdata->outputbuffer, "SystemConfig");
+										} 
+										else if (command == "getevents" && psdata->authorizationLevel >= AuthorizationLevels::ApplicationAdministrator) 
+										{
+											FILE_LOG(logDEBUG) << "WSCallbackBASE64 Received get events";
+											BuildFullTelemetry(psdata->outputbuffer, "Events");
+										} 
+										else if (command == "getfulltelemetry" && psdata->authorizationLevel >= AuthorizationLevels::ApplicationAdministrator) 
+										{
+											FILE_LOG(logDEBUG) << "WSCallbackBASE64 Received get full telemetry";
+											BuildFullTelemetry(psdata->outputbuffer, "List");
+											BuildFullTelemetry(psdata->outputbuffer, "Config");
+											BuildFullTelemetry(psdata->outputbuffer, "Status");
+											BuildFullTelemetry(psdata->outputbuffer, "State");
+											BuildFullTelemetry(psdata->outputbuffer, "Messages");
+											BuildFullTelemetry(psdata->outputbuffer, "SystemConfig");
+											BuildFullTelemetry(psdata->outputbuffer, "Events");
+										}
 									}
 									else
 									{
@@ -1568,7 +1644,6 @@ void CommandPlugin::SendUpdatesOverTMXMessaging()
 	BuildUpdateTelemetry(&outputBuffer, "Config");
 	BuildUpdateTelemetry(&outputBuffer, "Status");
 	BuildUpdateTelemetry(&outputBuffer, "State");
-	BuildUpdateTelemetry(&outputBuffer, "Messages");
 	BuildUpdateTelemetry(&outputBuffer, "SystemConfig");
 	BuildUpdateTelemetry(&outputBuffer, "Events");
 	//build removes, only thing we can remove currently is the plugin itself
