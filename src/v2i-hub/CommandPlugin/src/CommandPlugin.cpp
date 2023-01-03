@@ -165,10 +165,17 @@ void CommandPlugin::OnMessageReceived(IvpMessage *msg)
 				} else if (command == "restart") {
 					if (argsList.find("plugin") != argsList.end()) {
 						TmxControl::pluginlist plugins;
+						const uint16_t checkIfRunningIntervalMs = 100;
+						const uint16_t timeoutMs = 30000;
+						uint16_t waitTime = 0;
+
 						plugins.push_back(argsList["plugin"]);
 						bool rc = _tmxControl.disable(plugins);
 						if (rc) {
-							this_thread::sleep_for(std::chrono::milliseconds(3000));
+							while (isPluginRunning(argsList["plugin"]) == true && waitTime < timeoutMs) {
+								this_thread::sleep_for(std::chrono::milliseconds(100));
+								waitTime += checkIfRunningIntervalMs;
+							}
 							rc = _tmxControl.enable(plugins);
 						}
 						if (rc) {
@@ -501,6 +508,25 @@ void CommandPlugin::OnMessageReceived(IvpMessage *msg)
 			FILE_LOG(logDEBUG) << "ReceivedTMXmsg process message exception: " << ex.what();
 		}
 	}
+}
+
+bool CommandPlugin::isPluginRunning(string pluginName)
+{
+	bool pluginRunning = false;
+	ptree pt;
+	istringstream is(_statusJSON.c_str());
+	read_json(is, pt);
+
+	try {
+		string pluginStatus = pt.get<string>(pluginName);
+		if (pluginStatus == "Running") {
+			pluginRunning = true;
+		}
+	} catch (exception argsEx) {
+		FILE_LOG(logDEBUG4) << "Exception - There is no plugin " << pluginName;
+	}
+
+	return pluginRunning;
 }
 
 void CommandPlugin::SendDataOverTMXMessaging(string outputBuffer)
@@ -1055,11 +1081,17 @@ int CommandPlugin::WSCallbackBASE64(
 											if (argsList.find("plugin") != argsList.end())
 											{
 												TmxControl::pluginlist plugins;
+												const uint16_t checkIfRunningIntervalMs = 100;
+												const uint16_t timeoutMs = 30000;
+												uint16_t waitTime = 0;
+
 												plugins.push_back(argsList["plugin"]);
 												bool rc = _tmxControl.disable(plugins);
-												if (rc)
-												{
-													this_thread::sleep_for(std::chrono::milliseconds(3000));
+												if (rc) {
+													while (isPluginRunning(argsList["plugin"]) == true && waitTime < timeoutMs) {
+														this_thread::sleep_for(std::chrono::milliseconds(100));
+														waitTime += checkIfRunningIntervalMs;
+													}
 													rc = _tmxControl.enable(plugins);
 												}
 

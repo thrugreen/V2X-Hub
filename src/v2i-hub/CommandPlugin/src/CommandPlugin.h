@@ -84,6 +84,7 @@ protected:
 	static void SendData(string *outputBuffer, struct lws *wsi);
 	void SendDataOverTMXMessaging(string outputBuffer);
 	void SendUpdatesOverTMXMessaging();
+	static bool isPluginRunning(string pluginName);
 
 	static int WSCallbackHTTP(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len);
 	static int WSCallbackBASE64(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len);
