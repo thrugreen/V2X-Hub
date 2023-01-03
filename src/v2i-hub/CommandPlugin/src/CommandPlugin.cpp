@@ -140,7 +140,7 @@ void CommandPlugin::OnMessageReceived(IvpMessage *msg)
 				}
 
 				//process command
-				if (command == "enable")	{
+				if (command == "enable") {
 					if (argsList.find("plugin") != argsList.end()) {
 						TmxControl::pluginlist plugins;
 						plugins.push_back(argsList["plugin"]);
@@ -151,7 +151,7 @@ void CommandPlugin::OnMessageReceived(IvpMessage *msg)
 							FILE_LOG(logDEBUG) << "ReceivedTMXmsg enable " << argsList["plugin"] << " failed";
 						}
 					}
-				} else if (command == "disable")	{
+				} else if (command == "disable") {
 					if (argsList.find("plugin") != argsList.end()) {
 						TmxControl::pluginlist plugins;
 						plugins.push_back(argsList["plugin"]);
@@ -160,6 +160,21 @@ void CommandPlugin::OnMessageReceived(IvpMessage *msg)
 							FILE_LOG(logDEBUG) << "ReceivedTMXmsg disable " << argsList["plugin"] << " success";
 						} else {
 							FILE_LOG(logDEBUG) << "ReceivedTMXmsg disable " << argsList["plugin"] << " failed";
+						}
+					}
+				} else if (command == "restart") {
+					if (argsList.find("plugin") != argsList.end()) {
+						TmxControl::pluginlist plugins;
+						plugins.push_back(argsList["plugin"]);
+						bool rc = _tmxControl.disable(plugins);
+						if (rc) {
+							this_thread::sleep_for(std::chrono::milliseconds(3000));
+							rc = _tmxControl.enable(plugins);
+						}
+						if (rc) {
+							FILE_LOG(logDEBUG) << "ReceivedTMXmsg restart " << argsList["plugin"] << " success";
+						} else {
+							FILE_LOG(logDEBUG) << "ReceivedTMXmsg restart " << argsList["plugin"] << " failed";
 						}
 					}
 				} else if (command == "set")	{
@@ -1033,6 +1048,29 @@ int CommandPlugin::WSCallbackBASE64(
 													FILE_LOG(logDEBUG) << "WSCallbackBASE64 disable " << argsList["plugin"] << " success";
 												else
 													FILE_LOG(logDEBUG) << "WSCallbackBASE64 disable " << argsList["plugin"] << " failed";
+											}
+										}
+										else if (command == "restart" && psdata->authorizationLevel >= AuthorizationLevels::ApplicationAdministrator)
+										{
+											if (argsList.find("plugin") != argsList.end())
+											{
+												TmxControl::pluginlist plugins;
+												plugins.push_back(argsList["plugin"]);
+												bool rc = _tmxControl.disable(plugins);
+												if (rc)
+												{
+													this_thread::sleep_for(std::chrono::milliseconds(3000));
+													rc = _tmxControl.enable(plugins);
+												}
+
+												if (rc)
+												{
+													FILE_LOG(logDEBUG) << "WSCallbackBASE64 restart " << argsList["plugin"] << " success";
+												} 
+												else 
+												{
+													FILE_LOG(logDEBUG) << "WSCallbackBASE64 restart " << argsList["plugin"] << " failed";
+												}
 											}
 										}
 										else if (command == "set" && psdata->authorizationLevel >= AuthorizationLevels::ApplicationAdministrator)

@@ -10,9 +10,11 @@
 
 namespace CommandPlugin
 {
+static std::mutex accessDataMutex;
 
 void CommandPlugin::GetTelemetry(string dataType)
 {
+	std::lock_guard<std::mutex> guard(accessDataMutex);
 	TmxControl::pluginlist plugins;
 	bool processTelemetry = false;
 	set<string> pluginNames;
@@ -375,6 +377,7 @@ void CommandPlugin::GetTelemetry(string dataType)
 
 void CommandPlugin::BuildFullTelemetry(string *outputBuffer, string dataType)
 {
+	std::lock_guard<std::mutex> guard(accessDataMutex);
 	ostringstream oss;
 	bool processTelemetry = false;
 	string output;
@@ -461,6 +464,7 @@ void CommandPlugin::BuildFullTelemetry(string *outputBuffer, string dataType)
 
 void CommandPlugin::BuildUpdateTelemetry(string *outputBuffer, string dataType)
 {
+	std::lock_guard<std::mutex> guard(accessDataMutex);
 	ostringstream oss;
 	bool processTelemetry = false;
 	static std::map<string, string> *updates;
@@ -573,6 +577,7 @@ void CommandPlugin::BuildUpdateTelemetry(string *outputBuffer, string dataType)
 
 void CommandPlugin::BuildRemoveTelemetry(string *outputBuffer, string dataType)
 {
+	std::lock_guard<std::mutex> guard(accessDataMutex);
 	ostringstream oss;
 	bool processTelemetry = false;
 	string output;
@@ -643,6 +648,7 @@ void CommandPlugin::BuildRemoveTelemetry(string *outputBuffer, string dataType)
 
 void CommandPlugin::GetEventTelemetry()
 {
+	std::lock_guard<std::mutex> guard(accessDataMutex);
 	TmxControl::pluginlist plugins;
 	plugins.push_back("%");
 	_tmxControl.ClearOptions();
