@@ -141,28 +141,39 @@ void CommandPlugin::OnMessageReceived(IvpMessage *msg)
 
 				//process command
 				if (command == "enable") {
+					std::map<string, string> data;
 					if (argsList.find("plugin") != argsList.end()) {
 						TmxControl::pluginlist plugins;
 						plugins.push_back(argsList["plugin"]);
 						bool rc = _tmxControl.enable(plugins);
 						if (rc) {
+							BuildCommandResponse(&outputBuffer, id, command, "success", "", data, data);
 							FILE_LOG(logDEBUG) << "ReceivedTMXmsg enable " << argsList["plugin"] << " success";
 						} else {
+							BuildCommandResponse(&outputBuffer, id, command, "failed", "Failed to enable plugin", data, data);
 							FILE_LOG(logDEBUG) << "ReceivedTMXmsg enable " << argsList["plugin"] << " failed";
 						}
+					} else {
+						BuildCommandResponse(&outputBuffer, id, command, "failed", "Incomplete arguments list", data, data);
 					}
 				} else if (command == "disable") {
+					std::map<string, string> data;
 					if (argsList.find("plugin") != argsList.end()) {
 						TmxControl::pluginlist plugins;
 						plugins.push_back(argsList["plugin"]);
 						bool rc = _tmxControl.disable(plugins);
 						if (rc) {
+							BuildCommandResponse(&outputBuffer, id, command, "success", "", data, data);
 							FILE_LOG(logDEBUG) << "ReceivedTMXmsg disable " << argsList["plugin"] << " success";
 						} else {
+							BuildCommandResponse(&outputBuffer, id, command, "failed", "Failed to disable plugin", data, data);
 							FILE_LOG(logDEBUG) << "ReceivedTMXmsg disable " << argsList["plugin"] << " failed";
 						}
+					} else {
+						BuildCommandResponse(&outputBuffer, id, command, "failed", "Incomplete arguments list", data, data);
 					}
 				} else if (command == "restart") {
+					std::map<string, string> data;
 					if (argsList.find("plugin") != argsList.end()) {
 						TmxControl::pluginlist plugins;
 						const uint16_t checkIfRunningIntervalMs = 100;
@@ -176,15 +187,25 @@ void CommandPlugin::OnMessageReceived(IvpMessage *msg)
 								this_thread::sleep_for(std::chrono::milliseconds(100));
 								waitTime += checkIfRunningIntervalMs;
 							}
-							rc = _tmxControl.enable(plugins);
+
+							if (isPluginRunning(argsList["plugin"]) == false) {
+								rc = _tmxControl.enable(plugins);
+							} else {
+								rc = false;
+							}
 						}
 						if (rc) {
+							BuildCommandResponse(&outputBuffer, id, command, "success", "", data, data);
 							FILE_LOG(logDEBUG) << "ReceivedTMXmsg restart " << argsList["plugin"] << " success";
 						} else {
+							BuildCommandResponse(&outputBuffer, id, command, "failed", "Failed to restart plugin", data, data);
 							FILE_LOG(logDEBUG) << "ReceivedTMXmsg restart " << argsList["plugin"] << " failed";
 						}
+					} else {
+						BuildCommandResponse(&outputBuffer, id, command, "failed", "Incomplete arguments list", data, data);
 					}
-				} else if (command == "set")	{
+				} else if (command == "set") {
+					std::map<string, string> data;
 					if (argsList.find("plugin") != argsList.end()) {
 						if (argsList.find("key") != argsList.end() && argsList.find("value") != argsList.end()) {
 							TmxControl::pluginlist plugins;
@@ -222,11 +243,17 @@ void CommandPlugin::OnMessageReceived(IvpMessage *msg)
 
 							//check if we are setting a system config parameter
 							if (rc) {
+								BuildCommandResponse(&outputBuffer, id, command, "success", "", data, data);
 								FILE_LOG(logDEBUG) << "ReceivedTMXmsg set " << argsList["plugin"] << ": " << argsList["key"] << "=" << argsList["value"] << " success";
 							} else {
+								BuildCommandResponse(&outputBuffer, id, command, "failed", "Error occured while setting the value", data, data);
 								FILE_LOG(logDEBUG) << "ReceivedTMXmsg set " << argsList["plugin"] << ": " << argsList["key"] << "=" << argsList["value"] << " failed";
 							}
+						} else {
+							BuildCommandResponse(&outputBuffer, id, command, "failed", "Incomplete arguments list", data, data);
 						}
+					} else {
+						BuildCommandResponse(&outputBuffer, id, command, "failed", "Incomplete arguments list", data, data);
 					}
 				} else if (command == "clearlog") {
 					TmxControl::pluginlist plugins;
@@ -448,11 +475,12 @@ void CommandPlugin::OnMessageReceived(IvpMessage *msg)
 						if (rc) {
 							FILE_LOG(logDEBUG) << "ReceivedTMXmsg plugininstall success";
 							BuildCommandResponse(&outputBuffer, id, command, "success", "", data, data);
-
 						} else {
 							FILE_LOG(logDEBUG) << "ReceivedTMXmsg plugininstall failed";
 							BuildCommandResponse(&outputBuffer, id, command, "failed", "Plugin install failed", data, data);
 						}
+					} else {
+						BuildCommandResponse(&outputBuffer, id, command, "failed", "Incomplete arguments list", data, data);
 					}
 				} else if (command == "pluginuninstall") {
 					std::map<string, string> data;
@@ -468,6 +496,8 @@ void CommandPlugin::OnMessageReceived(IvpMessage *msg)
 							FILE_LOG(logDEBUG) << "ReceivedTMXmsg pluginuninstall failed";
 							BuildCommandResponse(&outputBuffer, id, command, "failed", "Plugin uninstall failed", data, data);
 						}
+					} else {
+						BuildCommandResponse(&outputBuffer, id, command, "failed", "Incomplete arguments list", data, data);
 					}
 				} else if (command == "listplugins") {
 					FILE_LOG(logDEBUG) << "ReceivedTMXmsg Received list plugins";
@@ -499,6 +529,9 @@ void CommandPlugin::OnMessageReceived(IvpMessage *msg)
 					BuildFullTelemetry(&outputBuffer, "Messages");
 					BuildFullTelemetry(&outputBuffer, "SystemConfig");
 					BuildFullTelemetry(&outputBuffer, "Events");
+				} else {
+					std::map<string, string> data;
+					BuildCommandResponse(&outputBuffer, id, command, "failed", "Unknown command", data, data);
 				}
 															
 				SendDataOverTMXMessaging(outputBuffer);
@@ -1722,6 +1755,52 @@ void CommandPlugin::SendUpdatesOverTMXMessaging()
 	SendDataOverTMXMessaging(outputBuffer);
 }
 
+void CommandPlugin::PluginsStatusSupervisor()
+{
+	string statusBuffer;
+	ptree pt;
+	ptree payload;
+	map<string, string> argsList;
+
+	BuildUpdateTelemetry(&statusBuffer, "Status");
+
+	if (statusBuffer.length() != 0) {
+		statusBuffer.erase(0, 1);
+		statusBuffer.pop_back();
+		istringstream is(statusBuffer.c_str());
+		read_json(is, pt);
+
+		payload = pt.get_child("payload");
+		BOOST_FOREACH(ptree::value_type &arg, payload)
+		{
+			if (arg.second.data().find("Stopped") != std::string::npos) {
+				if (_pluginRestartsData[arg.first].shouldBeDisabledButFailed == false) {
+					if (GetMsTimeSinceEpoch() - _pluginRestartsData[arg.first].firstRestartInSeriesTimestamp > 60000) {
+						_pluginRestartsData[arg.first].firstRestartInSeriesTimestamp = GetMsTimeSinceEpoch();
+						_pluginRestartsData[arg.first].numberOfContinousRestarts = 1;
+					} else {
+						_pluginRestartsData[arg.first].numberOfContinousRestarts++;
+					}
+				}
+
+				if (_pluginRestartsData[arg.first].numberOfContinousRestarts >= 3) {
+					PLOG(logERROR) << "Plugin " << arg.first << " keeps restarting - disabling!";
+					TmxControl::pluginlist plugins;
+					plugins.push_back(arg.first);
+					if (_tmxControl.disable(plugins) == true) {
+						_pluginRestartsData[arg.first].shouldBeDisabledButFailed = false;
+					} else {
+						PLOG(logERROR) << "Disabling failed";
+						_pluginRestartsData[arg.first].shouldBeDisabledButFailed = true;
+					}
+				}
+			}
+		}
+	}
+
+	// SendDataOverTMXMessaging(outputBuffer);
+}
+
 int CommandPlugin::Main()
 {
 	PLOG(logINFO) << "Starting plugin.";
@@ -1831,6 +1910,9 @@ int CommandPlugin::Main()
 
 				// Send updated data over TMX messaging
 				SendUpdatesOverTMXMessaging();
+
+				/* Validate if plugins work correctly */
+				PluginsStatusSupervisor();			
 			}
 
 			//schedule writable callback for all base64 protocol connections

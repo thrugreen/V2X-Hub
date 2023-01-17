@@ -85,6 +85,7 @@ protected:
 	void SendDataOverTMXMessaging(string outputBuffer);
 	void SendUpdatesOverTMXMessaging();
 	static bool isPluginRunning(string pluginName);
+	void PluginsStatusSupervisor();
 
 	static int WSCallbackHTTP(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len);
 	static int WSCallbackBASE64(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len);
@@ -137,6 +138,12 @@ private:
 		uint64_t fileSize;
 		bool uploading;
 		string message;
+	};
+
+	struct pluginRestartsData {
+		uint64_t firstRestartInSeriesTimestamp;
+		uint8_t numberOfContinousRestarts;
+		bool shouldBeDisabledButFailed;
 	};
 
 	enum AuthorizationLevels
@@ -212,6 +219,8 @@ private:
 	static uint64_t _eventsNextFullCount;
 
 	static std::map<string, UploadData> _uploadRequests;
+
+	std::map<string, pluginRestartsData> _pluginRestartsData;
 
 };
 
