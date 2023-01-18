@@ -737,6 +737,20 @@ void CommandPlugin::GetEventTelemetry()
 
 }
 
+void CommandPlugin::BuildPluginDisabledFailed(string *outputBuffer, string plugin, uint16_t numberOfRestarts)
+{
+	ostringstream oss;
+	outputBuffer->append("\x02{\"header\":{\"type\":\"Supervisor\",\"subtype\":\"Disable\",\"encoding\":\"jsonstring\",\"timestamp\":\"");
+	oss << GetMsTimeSinceEpoch();
+	outputBuffer->append(oss.str());
+	outputBuffer->append("\",\"flags\":\"0\"},\"payload\":{");
+	outputBuffer->append("\"plugin\":\"");
+	outputBuffer->append(plugin);
+	outputBuffer->append("\",\"restarts\":\"");
+	outputBuffer->append(std::to_string(numberOfRestarts));
+	outputBuffer->append("}}\x03");
+}
+
 void CommandPlugin::BuildCommandResponse(string *outputBuffer, string id, string command, string status, string reason, std::map<string, string> &data, std::map<string, string> &arrayData)
 {
 	ostringstream oss;

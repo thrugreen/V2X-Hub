@@ -603,6 +603,7 @@ void CommandPlugin::UpdateConfigSettings()
 		GetConfigValue<string>("DownloadPath", _downloadPath);
 	}
 	GetConfigValue<uint64_t>("EventRowLimit", _eventRowLimit);
+	GetConfigValue<uint16_t>("PluginRestartsToDisable", _numberOfRestartsToDisable);
 
 	//PLOG(logDEBUG) << "    Config data - SleepMS: " << SleepMS ;
 
@@ -1758,6 +1759,7 @@ void CommandPlugin::SendUpdatesOverTMXMessaging()
 void CommandPlugin::PluginsStatusSupervisor()
 {
 	string statusBuffer;
+	string outputBuffer;
 	ptree pt;
 	ptree payload;
 	map<string, string> argsList;
@@ -1783,12 +1785,14 @@ void CommandPlugin::PluginsStatusSupervisor()
 					}
 				}
 
-				if (_pluginRestartsData[arg.first].numberOfContinousRestarts >= 3) {
+				if (_pluginRestartsData[arg.first].numberOfContinousRestarts >= _numberOfRestartsToDisable) {
 					PLOG(logERROR) << "Plugin " << arg.first << " keeps restarting - disabling!";
 					TmxControl::pluginlist plugins;
 					plugins.push_back(arg.first);
 					if (_tmxControl.disable(plugins) == true) {
 						_pluginRestartsData[arg.first].shouldBeDisabledButFailed = false;
+						BuildPluginDisabledFailed(&outputBuffer, arg.first, _pluginRestartsData[arg.first].numberOfContinousRestarts);
+						SendDataOverTMXMessaging(outputBuffer);
 					} else {
 						PLOG(logERROR) << "Disabling failed";
 						_pluginRestartsData[arg.first].shouldBeDisabledButFailed = true;
@@ -1797,8 +1801,6 @@ void CommandPlugin::PluginsStatusSupervisor()
 			}
 		}
 	}
-
-	// SendDataOverTMXMessaging(outputBuffer);
 }
 
 int CommandPlugin::Main()

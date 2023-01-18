@@ -32,6 +32,11 @@
             "description":"The path to the directory where downloaded files will be saved."
         },
         {
+            "key":"PluginRestartsToDisable",
+            "default":"3",
+            "description":"The number of continous restarts of specific plugin in 1 minute to disable it."
+        },
+        {
             "key":"LogLevel",
             "default":"ERROR",
             "description":"The log level for this plugin"

@@ -81,6 +81,7 @@ protected:
 	static void BuildUpdateTelemetry(string *outputBuffer, string dataType);
 	static void BuildRemoveTelemetry(string *outputBuffer, string dataType);
 	static void BuildCommandResponse(string *outputBuffer, string id, string command, string status, string reason, std::map<string, string> &data, std::map<string, string> &arrayData);
+	static void BuildPluginDisabledFailed(string *outputBuffer, string plugin, uint16_t numberOfRestarts);
 	static void SendData(string *outputBuffer, struct lws *wsi);
 	void SendDataOverTMXMessaging(string outputBuffer);
 	void SendUpdatesOverTMXMessaging();
@@ -142,7 +143,7 @@ private:
 
 	struct pluginRestartsData {
 		uint64_t firstRestartInSeriesTimestamp;
-		uint8_t numberOfContinousRestarts;
+		uint16_t numberOfContinousRestarts;
 		bool shouldBeDisabledButFailed;
 	};
 
@@ -221,6 +222,7 @@ private:
 	static std::map<string, UploadData> _uploadRequests;
 
 	std::map<string, pluginRestartsData> _pluginRestartsData;
+	uint16_t _numberOfRestartsToDisable;
 
 };
 
